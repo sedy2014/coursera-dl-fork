@@ -113,7 +113,7 @@ def list_courses(args):
         logging.info(course)
 
 
-def download_on_demand_class(session, args, class_name):
+def download_on_demand_class(session, args, class_name, folder_name=None):
     """
     Download all requested resources from the on-demand class given
     in class_name.
@@ -161,7 +161,7 @@ def download_on_demand_class(session, args, class_name):
     course_downloader = CourseraDownloader(
         downloader_wrapper,
         commandline_args=args,
-        class_name=class_name,
+        class_name=folder_name or class_name,
         path=args.path,
         ignored_formats=ignored_formats,
         disable_url_skipping=args.disable_url_skipping
@@ -201,9 +201,13 @@ def print_failed_urls(failed_urls):
     logging.info('-' * 80)
 
 
-def download_class(session, args, class_name):
+def download_class(session, args, class_name, folder_name=None):
     """
     Try to download on-demand class.
+
+    @param folder_name: Optional override for the on-disk folder name.
+        When provided the API still uses class_name; only the directory
+        written to disk uses folder_name.
 
     @return: Tuple of (bool, bool), where the first bool indicates whether
         errors occurred while parsing syllabus, the second bool indicates
@@ -211,7 +215,8 @@ def download_class(session, args, class_name):
     @rtype: (bool, bool)
     """
     logging.debug('Downloading new style (on demand) class %s', class_name)
-    return download_on_demand_class(session, args, class_name)
+    return download_on_demand_class(
+        session, args, class_name, folder_name=folder_name or class_name)
 
 
 def main():
@@ -247,14 +252,82 @@ def main():
     else:
         login(session, args.username, args.password)
     if args.specialization:
-        args.class_names = expand_specializations(session, args.class_names)
+        expanded = expand_specializations(session, args.class_names)
+        if not args.assume_yes:
+            import re as _re
+
+            def _to_slug(text):
+                """Convert a course name or slug to a valid URL slug."""
+                text = text.lower()
+                text = _re.sub(r'[^a-z0-9\s-]', '', text)  # strip special chars
+                text = _re.sub(r'[\s]+', '-', text.strip())  # spaces → hyphens
+                text = _re.sub(r'-+', '-', text).strip('-')  # collapse dashes
+                return text
+
+            # Show all resolved slugs at once, numbered.
+            print('\nResolved %d course(s):' % len(expanded))
+            for i, slug in enumerate(expanded, 1):
+                print('  %d. %s' % (i, slug))
+            print('\n  Tip: slugs are the URL part after coursera.org/learn/')
+            print('  e.g. "build-train-and-deploy-ml-models-with-keras-on-google-cloud"')
+            print('  You can also paste the full course name — it will be auto-converted.')
+
+            # folder_map: api_slug -> folder name (defaults to api_slug)
+            folder_map = {slug: slug for slug in expanded}
+
+            all_ok = input('\nAre all slugs correct? [y/N] ').strip().lower()
+            if all_ok in ('y', 'yes'):
+                confirmed = list(expanded)
+            else:
+                # Ask which numbers are correct; fix the rest one by one.
+                correct_input = input(
+                    'Enter the numbers that ARE correct (e.g. 1,3,5), '
+                    'or leave blank if none: '
+                ).strip()
+                correct_indices = set()
+                if correct_input:
+                    for part in correct_input.split(','):
+                        part = part.strip()
+                        if part.isdigit():
+                            correct_indices.add(int(part))
+
+                confirmed = list(expanded)
+                for i, slug in enumerate(expanded, 1):
+                    if i not in correct_indices:
+                        raw = input(
+                            'Course %d (was: %s)\n'
+                            '  Enter the display name (from certificate page): '
+                            % (i, slug)
+                        ).strip()
+                        if raw:
+                            display_slug = _to_slug(raw)
+                            # folder = "DisplayName_apiSlug" so both are visible
+                            folder_map[slug] = '%s_%s' % (display_slug, slug)
+                            print('  → API slug kept: %s' % slug)
+                            print('  → Folder name : %s' % folder_map[slug])
+
+            print('\nFinal course list to download:')
+            for i, slug in enumerate(confirmed, 1):
+                print('  %d. %s  (folder: %s)' % (i, slug, folder_map[slug]))
+            answer = input('\nProceed with downloading these %d course(s)? [y/N] '
+                           % len(confirmed)).strip().lower()
+            if answer not in ('y', 'yes'):
+                logging.info('Aborted by user.')
+                return
+            args.class_names = confirmed
+            args.folder_map = folder_map
+        else:
+            args.class_names = expanded
+            args.folder_map = {}
 
     for class_index, class_name in enumerate(args.class_names):
         try:
+            folder_map = getattr(args, 'folder_map', {})
+            folder_name = folder_map.get(class_name, class_name)
             logging.info('Downloading class: %s (%d / %d)',
-                         class_name, class_index + 1, len(args.class_names))
+                         folder_name, class_index + 1, len(args.class_names))
             error_occurred, completed = download_class(
-                session, args, class_name)
+                session, args, class_name, folder_name=folder_name)
             if completed:
                 completed_classes.append(class_name)
             if error_occurred:

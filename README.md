@@ -302,11 +302,57 @@ Here are some examples of how to invoke `coursera-dl` from the command line:
     Download videos at 720p:     coursera-dl -c cookies.txt --video-resolution 720p ni-001
     With subtitles:              coursera-dl -c cookies.txt --subtitle-language en modelthinking-004
     Specify download path:       coursera-dl -c cookies.txt --path=C:\Coursera\Classes\ comnetworks-002
+    Whole specialization/cert:   coursera-dl -c cookies.txt --specialization --path ./courses my-specialization-slug
+    Specialization (no prompt):  coursera-dl -c cookies.txt --specialization -y --path ./courses my-specialization-slug
     Display help:                coursera-dl --help
 
     Maintain a list of classes in a dir:
       Initialize:              mkdir -p CURRENT/{class1,class2,..classN}
       Update:                  coursera-dl -c cookies.txt --path CURRENT `\ls CURRENT`
+```
+
+## Downloading a full specialization or professional certificate
+
+Pass the specialization slug (the part after `coursera.org/specializations/` or
+`coursera.org/professional-certificates/`) with `--specialization` and
+`coursera-dl` will auto-expand it into all its component courses:
+
+```
+coursera-dl -c cookies.txt --specialization --path ./courses \
+    preparing-for-google-cloud-machine-learning-engineer-professional-certificate
+```
+
+**Interactive slug review:** Because Coursera's specialization API can return
+stale course slugs (from a previous version of the certificate), the tool
+shows every resolved slug and asks you to confirm before downloading starts:
+
+```
+Resolved 6 course(s):
+  1. intro-tensorflow
+  2. gcp-production-ml-systems
+  ...
+
+Are all slugs correct? [y/N] n
+Enter the numbers that ARE correct (e.g. 1,3,5), or leave blank if none: 5,6
+Course 1 (was: intro-tensorflow)
+  Enter the display name (from certificate page): Build, Train and Deploy ML Models with Keras on Google Cloud
+  → API slug kept: intro-tensorflow
+  → Folder name : build-train-and-deploy-ml-models-with-keras-on-google-cloud_intro-tensorflow
+```
+
+Key points:
+- The **original API slug is always kept** for the Coursera API call (replacing
+  it with a human-readable name will cause a 400 error).
+- Provide the **display name as shown on the certificate page** — it is
+  auto-converted to a folder-safe slug and combined with the API slug:
+  `display-name_api-slug/`.
+- Courses confirmed correct keep the API slug as both the download slug and
+  folder name.
+- Use `-y` / `--yes` to skip all prompts and download immediately (useful
+  when you have already confirmed the slugs are correct):
+
+```
+coursera-dl -c cookies.txt --specialization -y --path ./courses my-cert-slug
 ```
 **Note:** If your `ls` command is aliased to display a colorized output, you
 may experience problems.  Be sure to escape the `ls` command (use `\ls`) to

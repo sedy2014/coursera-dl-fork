@@ -47,12 +47,15 @@ def parse_args(args=None):
     # Basic options
     group_basic = parser.add_argument_group('Basic options')
 
+    # Positional: one or more course slugs (or specialization slugs with --specialization).
+    # These are the URL identifiers from coursera.org/learn/<slug>.
     group_basic.add_argument(
         'class_names',
         action='store',
         nargs='*',
         help='name(s) of the class(es) (e.g. "ml-005")')
 
+    # Coursera account email — only needed when not using a cookies file (-c).
     group_basic.add_argument(
         '-u',
         '--username',
@@ -61,6 +64,7 @@ def parse_args(args=None):
         default=None,
         help='username (email) that you use to login to Coursera')
 
+    # Coursera account password — only needed when not using a cookies file (-c).
     group_basic.add_argument(
         '-p',
         '--password',
@@ -69,6 +73,8 @@ def parse_args(args=None):
         default=None,
         help='coursera password')
 
+    # Number of concurrent downloads. Increase (e.g. --jobs 4) to speed up
+    # large courses; set to 1 to download sequentially (default, safest).
     group_basic.add_argument(
         '--jobs',
         dest='jobs',
@@ -78,6 +84,8 @@ def parse_args(args=None):
         help='number of parallel jobs to use for '
         'downloading resources. (Default: 1)')
 
+    # Pause between consecutive courses when downloading multiple at once.
+    # Helps avoid rate-limiting by Coursera's servers.
     group_basic.add_argument(
         '--download-delay',
         dest='download_delay',
@@ -87,6 +95,8 @@ def parse_args(args=None):
         help='number of seconds to wait before downloading '
         'next course. (Default: 60)')
 
+    # Fetch videos from the public preview pages instead of enrolled-student pages.
+    # Useful for sampling a course without being enrolled; fewer materials available.
     group_basic.add_argument(
         '-b',  # FIXME: kill this one-letter option
         '--preview',
@@ -95,6 +105,8 @@ def parse_args(args=None):
         default=False,
         help='get videos from preview pages. (Default: False)')
 
+    # Root directory where course folders are created. Each course gets its own
+    # sub-folder named after the course slug (or the corrected folder name).
     group_basic.add_argument(
         '--path',
         dest='path',
@@ -102,6 +114,8 @@ def parse_args(args=None):
         default='',
         help='path to where to save the file. (Default: current directory)')
 
+    # Which subtitle/transcript languages to download. Use "all" to grab every
+    # available language, or e.g. "en" / "en,zh-CN" for specific ones.
     group_basic.add_argument(
         '-sl',  # FIXME: deprecate this option
         '--subtitle-language',
@@ -125,6 +139,8 @@ def parse_args(args=None):
     group_material = parser.add_argument_group(
         'Selection of material to download')
 
+    # Treat each class_name as a specialization/professional-certificate slug and
+    # auto-expand it into all its component courses before downloading.
     group_material.add_argument(
         '--specialization',
         dest='specialization',
@@ -135,6 +151,19 @@ def parse_args(args=None):
         'clashes, e.g. "machine-learning" is both a course and a '
         'specialization (Default: False)')
 
+    # Skip the interactive per-course slug review when using --specialization.
+    # Download proceeds immediately with whatever the API returned.
+    group_material.add_argument(
+        '-y', '--yes',
+        dest='assume_yes',
+        action='store_true',
+        default=False,
+        help='skip the confirmation prompt shown after a specialization is '
+        'expanded into its course list (useful for scripting/automation) '
+        '(Default: False)')
+
+    # Parse and cache the course syllabus structure without downloading any files.
+    # Useful for inspecting what's available before committing to a full download.
     group_material.add_argument(
         '--only-syllabus',
         dest='only_syllabus',
@@ -143,6 +172,8 @@ def parse_args(args=None):
         help='download only syllabus, skip course content. '
         '(Default: False)')
 
+    # Also download quiz/exam question content (saved as HTML files).
+    # Disabled by default since quizzes are interactive and not just video/PDF.
     group_material.add_argument(
         '--download-quizzes',
         dest='download_quizzes',
@@ -150,6 +181,8 @@ def parse_args(args=None):
         default=False,
         help='download quiz and exam questions. (Default: False)')
 
+    # Also download Jupyter (.ipynb) notebook files attached to lectures.
+    # Useful for ML/data-science courses that provide hands-on notebook labs.
     group_material.add_argument(
         '--download-notebooks',
         dest='download_notebooks',
@@ -157,6 +190,8 @@ def parse_args(args=None):
         default=False,
         help='download Python Jupyther Notebooks. (Default: False)')
 
+    # Download the course "about" page metadata (description, instructor info, etc.)
+    # as a JSON file alongside the course materials.
     group_material.add_argument(
         '--about',  # FIXME: should be --about-course
         dest='about',
@@ -164,6 +199,8 @@ def parse_args(args=None):
         default=False,
         help='download "about" metadata. (Default: False)')
 
+    # Whitelist of file extensions to download, e.g. "mp4 pdf".
+    # Default "all" downloads every available format for each lecture.
     group_material.add_argument(
         '-f',
         '--formats',
@@ -174,6 +211,8 @@ def parse_args(args=None):
         ' quotes space separated, e.g. "mp4 pdf" '
         '(default: special value "all")')
 
+    # Blacklist of file extensions to skip, e.g. "txt srt".
+    # Complement of --formats: use when you want everything except a few types.
     group_material.add_argument(
         '--ignore-formats',
         dest='ignore_formats',
@@ -182,6 +221,8 @@ def parse_args(args=None):
         help='file format extensions of resources to ignore'
         ' (default: None)')
 
+    # Regex filter on section (week) names — only matching sections are downloaded.
+    # e.g. -sf "Week_3" downloads only the week-3 section.
     group_material.add_argument(
         '-sf',  # FIXME: deprecate this option
         '--section_filter',
@@ -191,6 +232,8 @@ def parse_args(args=None):
         help='only download sections which contain this'
         ' regex (default: disabled)')
 
+    # Regex filter on lecture titles — only matching lectures are downloaded.
+    # e.g. -lf "Introduction" skips everything except intro lectures.
     group_material.add_argument(
         '-lf',  # FIXME: deprecate this option
         '--lecture_filter',
@@ -200,6 +243,8 @@ def parse_args(args=None):
         help='only download lectures which contain this regex'
         ' (default: disabled)')
 
+    # Regex filter on individual resource filenames within each lecture.
+    # More granular than -lf; e.g. -rf "slides" downloads only slide PDFs.
     group_material.add_argument(
         '-rf',  # FIXME: deprecate this option
         '--resource_filter',
@@ -209,6 +254,8 @@ def parse_args(args=None):
         help='only download resources which match this regex'
         ' (default: disabled)')
 
+    # Video quality for on-demand courses. Higher resolutions use more disk space.
+    # Allowed values: 360p (smallest), 540p (default), 720p (best quality).
     group_material.add_argument(
         '--video-resolution',
         dest='video_resolution',
@@ -218,6 +265,8 @@ def parse_args(args=None):
         'only valid for on-demand courses; '
         'only values allowed: 360p, 540p, 720p')
 
+    # By default some URL types (e.g. external links) are skipped to avoid
+    # downloading unrelated content. This flag forces all URLs to be downloaded.
     group_material.add_argument(
         '--disable-url-skipping',
         dest='disable_url_skipping',
