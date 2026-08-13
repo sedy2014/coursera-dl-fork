@@ -102,8 +102,8 @@ class CourseraExtractor(PlatformExtractor):
             unrestricted_filenames=unrestricted_filenames,
             mathjax_cdn_url=mathjax_cdn_url)
         course.obtain_user_id()
-        ondemand_material_items = OnDemandCourseMaterialItemsV1.create(
-            session=self._session, course_name=course_name)
+        ondemand_material_items = OnDemandCourseMaterialItemsV1.from_v2_items(
+            dom['linked']['onDemandCourseMaterialItems.v2'])
 
         if is_debug_run():
             spit_json(dom, '%s-syllabus-raw.json' % course_name)

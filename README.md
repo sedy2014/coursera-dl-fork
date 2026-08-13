@@ -22,8 +22,10 @@
     - [Windows](#windows)
     - [Create an account with Coursera](#create-an-account-with-coursera)
 - [Running the script](#running-the-script)
+    - [Authentication via cookies (required)](#authentication-via-cookies-required)
     - [Resuming downloads](#resuming-downloads)
 - [Troubleshooting](#troubleshooting)
+    - [400 Bad Request on login / 403 Forbidden on API calls](#400-bad-request-on-login--403-forbidden-on-api-calls)
     - [China issues](#china-issues)
     - [Found 0 sections and 0 lectures on this page](#found-0-sections-and-0-lectures-on-this-page)
     - [Download timeouts](#download-timeouts)
@@ -100,13 +102,12 @@ relevant excerpt:
 
 # Installation instructions
 
-`coursera-dl` requires Python 2 or Python 3 and a free Coursera account
-enrolled in the class of interest. (As of February of 2020, we test
-automatically the execution of the program with Python versions 2.7, Pypy,
-3.6, 3.7, 3.8, and 3.9).
+`coursera-dl` requires **Python 3.9 or later** and a Coursera account
+enrolled in the class of interest.
 
-**Note:** We *strongly* recommend that you use a Python 3 interpreter (3.9
-or later).
+**Note:** Python 2 is no longer supported. Use Python 3.11+ for best
+compatibility — several stdlib APIs used by older versions of this tool
+(`HTMLParser.unescape`, the `'rU'` file mode) were removed in Python 3.9–3.11.
 
 On any operating system, ensure that the Python executable location is added
 to your `PATH` environment variable and, once you have the dependencies
@@ -277,34 +278,35 @@ a class. See https://www.coursera.org/courses for the list of classes.
 Refer to `coursera-dl --help` for a complete, up-to-date reference on the runtime options
 supported by this utility.
 
-Run the script to download the materials by providing your Coursera account
-credentials (e.g. email address and password or a `~/.netrc` file), the
-class names, as well as any additional parameters:
-```
-    General:                     coursera-dl -u <user> -p <pass> modelthinking-004
+Run the script to download the materials by providing a Netscape-format
+cookies file exported from your browser (see Authentication below), the
+class names, and any additional parameters:
 
-    With CAUTH parameter:	 coursera-dl -ca 'some-ca-value-from-browser' modelthinking-004
 ```
-If you don't want to type your password in command line as plain text, you can use the
-script without `-p` option. In this case you will be prompted for password  once the
-script is run.
+    Cookie file (recommended):   coursera-dl -c cookies.txt modelthinking-004
+    With CAUTH token only:       coursera-dl -ca 'some-ca-value-from-browser' modelthinking-004
+```
+
+> **Note:** Username/password login (`-u`/`-p`) no longer works. Coursera
+> deprecated the `/api/login/v3` endpoint. You must authenticate via a
+> browser-exported cookies file (`-c`) or a CAUTH token (`-ca`).
 
 Here are some examples of how to invoke `coursera-dl` from the command line:
+
 ```
-    Without -p field:            coursera-dl -u <user> modelthinking-004
-    Multiple classes:            coursera-dl -u <user> -p <pass> saas historyofrock1-001 algo-2012-002
-    Filter by section name:      coursera-dl -u <user> -p <pass> -sf "Chapter_Four" crypto-004
-    Filter by lecture name:      coursera-dl -u <user> -p <pass> -lf "3.1_" ml-2012-002
-    Download only ppt files:     coursera-dl -u <user> -p <pass> -f "ppt" qcomp-2012-001
-    Use a ~/.netrc file:         coursera-dl -n -- matrix-001
-    Get the preview classes:     coursera-dl -n -b ni-001
-	Download videos at 720p:     coursera-dl -n --video-resolution 720p ni-001
-    Specify download path:       coursera-dl -n --path=C:\Coursera\Classes\ comnetworks-002
+    Basic download:              coursera-dl -c cookies.txt modelthinking-004
+    Multiple classes:            coursera-dl -c cookies.txt saas historyofrock1-001 algo-2012-002
+    Filter by section name:      coursera-dl -c cookies.txt -sf "Chapter_Four" crypto-004
+    Filter by lecture name:      coursera-dl -c cookies.txt -lf "3.1_" ml-2012-002
+    Download only ppt files:     coursera-dl -c cookies.txt -f "ppt" qcomp-2012-001
+    Download videos at 720p:     coursera-dl -c cookies.txt --video-resolution 720p ni-001
+    With subtitles:              coursera-dl -c cookies.txt --subtitle-language en modelthinking-004
+    Specify download path:       coursera-dl -c cookies.txt --path=C:\Coursera\Classes\ comnetworks-002
     Display help:                coursera-dl --help
 
     Maintain a list of classes in a dir:
       Initialize:              mkdir -p CURRENT/{class1,class2,..classN}
-      Update:                  coursera-dl -n --path CURRENT `\ls CURRENT`
+      Update:                  coursera-dl -c cookies.txt --path CURRENT `\ls CURRENT`
 ```
 **Note:** If your `ls` command is aliased to display a colorized output, you
 may experience problems.  Be sure to escape the `ls` command (use `\ls`) to
@@ -349,6 +351,28 @@ provided again on the commandline.
 
 **Note:** In `coursera-dl.conf`, all the parameters should not be wrapped
 with quotes.
+
+## Authentication via cookies (required)
+
+Coursera's username/password login API was deprecated and now returns
+`400 Bad Request`. The only supported authentication method is a
+browser-exported **Netscape cookies file**.
+
+**Steps:**
+
+1. Log in to Coursera in your browser and open the course you want to download.
+2. Install a browser extension that exports cookies in Netscape format, e.g.:
+   - Chrome: [Get cookies.txt LOCALLY](https://chrome.google.com/webstore/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)
+   - Firefox: [cookies.txt](https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/)
+3. Export cookies for `coursera.org` to a file (e.g. `cookies.txt`).
+4. Pass the file to `coursera-dl` with the `-c` flag:
+
+```
+coursera-dl -c cookies.txt --path ./courses my-course-slug
+```
+
+The two cookies that matter are `CAUTH` and `CSRF3-Token`. Refresh them
+(re-export) if you start getting `403` errors after a day or two.
 
 ## Resuming downloads
 
@@ -452,6 +476,20 @@ one of the following actions solve your problem:
   ```
       pip install coursera-dl
   ```
+
+## 400 Bad Request on login / 403 Forbidden on API calls
+
+Coursera deprecated username/password login. If you see:
+
+```
+400 Client Error: Bad Request for url: https://api.coursera.org/api/login/v3
+```
+
+stop using `-u`/`-p` and switch to a cookie file (`-c cookies.txt`). See
+the **Authentication via cookies** section above for step-by-step instructions.
+
+If you see a `403 Forbidden` on `memberships.v1` or other API endpoints,
+your cookies have likely expired — re-export them from the browser and try again.
 
 ## China issues
 

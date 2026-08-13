@@ -305,21 +305,42 @@ class OnDemandCourseMaterialItemsV1(object):
         """
         Create an instance using a session and a course_name.
 
-        @param session: Requests session.
-        @type session: requests.Session
-
-        @param course_name: Course name (slug) from course json.
-        @type course_name: str
-
-        @return: Instance of OnDemandCourseMaterialItems
-        @rtype: OnDemandCourseMaterialItems
+        Falls back to an empty map if the v1 endpoint is unavailable
+        (it has been deprecated by Coursera). Callers should prefer
+        from_v2_items() when the v2 DOM is already available.
         """
+        try:
+            dom = get_page(session, OPENCOURSE_ONDEMAND_COURSE_MATERIALS,
+                           json=True,
+                           class_name=course_name)
+            return OnDemandCourseMaterialItemsV1(
+                dom['linked']['onDemandCourseMaterialItems.v1'])
+        except Exception as exc:
+            logging.warning(
+                'Could not fetch v1 course materials (%s); '
+                'programming-assignment fallback will be skipped.', exc)
+            return OnDemandCourseMaterialItemsV1([])
 
-        dom = get_page(session, OPENCOURSE_ONDEMAND_COURSE_MATERIALS,
-                       json=True,
-                       class_name=course_name)
-        return OnDemandCourseMaterialItemsV1(
-            dom['linked']['onDemandCourseMaterialItems.v1'])
+    @staticmethod
+    def from_v2_items(items_v2_data):
+        """
+        Build the lessonId->item map directly from already-fetched v2 data,
+        wrapping each raw dict in an ItemV2 so .type_name attribute access works.
+        """
+        items_by_lesson = {}
+        for raw in items_v2_data:
+            iv2 = ItemV2(
+                name=raw['name'],
+                id=raw['id'],
+                slug=raw['slug'],
+                type_name=raw['contentSummary']['typeName'],
+                lesson_id=raw['lessonId'],
+                module_id=raw['moduleId'],
+            )
+            items_by_lesson[raw['lessonId']] = iv2
+        inst = OnDemandCourseMaterialItemsV1.__new__(OnDemandCourseMaterialItemsV1)
+        inst._items = items_by_lesson
+        return inst
 
     def get(self, lesson_id):
         """

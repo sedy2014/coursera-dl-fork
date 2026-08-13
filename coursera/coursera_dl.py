@@ -60,7 +60,7 @@ import requests
 
 from .cookies import (
     AuthenticationFailed, ClassNotFound,
-    get_cookies_for_class, make_cookie_values, TLSAdapter, login)
+    get_cookies_for_class, get_cookie_jar, make_cookie_values, TLSAdapter, login)
 from .define import (CLASS_URL, ABOUT_URL, PATH_CACHE)
 from .downloaders import get_downloader
 from .workflow import CourseraDownloader
@@ -235,6 +235,15 @@ def main():
     session = get_session()
     if args.cookies_cauth:
         session.cookies.set('CAUTH', args.cookies_cauth)
+    elif args.cookies_file:
+        # Load all cookies from the file into the session upfront so that
+        # global API calls (e.g. memberships.v1) are authenticated.
+        jar = get_cookie_jar(args.cookies_file)
+        session.cookies.update(jar)
+        csrf3 = (session.cookies.get('CSRF3-Token')
+                 or session.cookies.get('csrf3-token'))
+        if csrf3:
+            session.headers['X-CSRF3-Token'] = csrf3
     else:
         login(session, args.username, args.password)
     if args.specialization:

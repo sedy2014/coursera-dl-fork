@@ -22,3 +22,13 @@ venv3
 .ipynb_checkpoints
 .ropeproject
 .mypy_cache
+
+# course data
+/courses/
+
+# cookies
+cookies.txt
+*.txt.cookies
+
+# syllabus data
+*-syllabus-parsed.json
