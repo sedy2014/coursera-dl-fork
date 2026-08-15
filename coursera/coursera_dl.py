@@ -88,11 +88,50 @@ assert V(bs4.__version__) >= V('4.1'), "Upgrade bs4!" + _SEE_URL
 
 def get_session():
     """
-    Create a session with TLS v1.2 certificate.
+    Create a bare session with TLS v1.2 certificate (no auth applied).
+    Prefer build_session() when you also need authentication.
     """
 
     session = requests.Session()
     session.mount('https://', TLSAdapter())
+
+    return session
+
+
+def build_session(cookies_file=None, cauth=None, username=None, password=None):
+    """
+    Create an authenticated session ready for Coursera API calls.
+
+    Exactly one auth source must be supplied:
+      - cookies_file : path to a Netscape cookies.txt exported from a browser
+      - cauth        : raw CAUTH cookie value
+      - username + password : legacy login (no longer works on modern Coursera)
+
+    This function is called both by main() (CLI path) and by the Gradio UI
+    adapter so both share identical auth logic.
+
+    Returns
+    -------
+    requests.Session
+        Session with cookies and CSRF3 header set.
+    """
+    session = get_session()
+
+    if cauth:
+        session.cookies.set('CAUTH', cauth)
+    elif cookies_file:
+        jar = get_cookie_jar(cookies_file)
+        session.cookies.update(jar)
+        csrf3 = (session.cookies.get('CSRF3-Token')
+                 or session.cookies.get('csrf3-token'))
+        if csrf3:
+            session.headers['X-CSRF3-Token'] = csrf3
+    elif username and password:
+        login(session, username, password)
+    else:
+        raise ValueError(
+            'build_session() requires cookies_file, cauth, or username+password.'
+        )
 
     return session
 
@@ -237,20 +276,12 @@ def main():
         list_courses(args)
         return
 
-    session = get_session()
-    if args.cookies_cauth:
-        session.cookies.set('CAUTH', args.cookies_cauth)
-    elif args.cookies_file:
-        # Load all cookies from the file into the session upfront so that
-        # global API calls (e.g. memberships.v1) are authenticated.
-        jar = get_cookie_jar(args.cookies_file)
-        session.cookies.update(jar)
-        csrf3 = (session.cookies.get('CSRF3-Token')
-                 or session.cookies.get('csrf3-token'))
-        if csrf3:
-            session.headers['X-CSRF3-Token'] = csrf3
-    else:
-        login(session, args.username, args.password)
+    session = build_session(
+        cookies_file=args.cookies_file,
+        cauth=getattr(args, 'cookies_cauth', None),
+        username=getattr(args, 'username', None),
+        password=getattr(args, 'password', None),
+    )
     if args.specialization:
         expanded = expand_specializations(session, args.class_names)
         if not args.assume_yes:

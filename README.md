@@ -21,9 +21,16 @@
     - [Docker](#docker)
     - [Windows](#windows)
     - [Create an account with Coursera](#create-an-account-with-coursera)
+- [Gradio web UI](#gradio-web-ui)
+    - [Launching the web UI](#launching-the-web-ui)
+    - [Tab 1 — Setup](#tab-1--setup)
+    - [Tab 2 — Course Selection](#tab-2--course-selection)
+    - [Tab 3 — Progress & Logs](#tab-3--progress--logs)
+    - [Cancel, Resume, and Reset](#cancel-resume-and-reset)
 - [Running the script](#running-the-script)
     - [Authentication via cookies (required)](#authentication-via-cookies-required)
     - [Resuming downloads](#resuming-downloads)
+- [Running tests](#running-tests)
 - [Troubleshooting](#troubleshooting)
     - [400 Bad Request on login / 403 Forbidden on API calls](#400-bad-request-on-login--403-forbidden-on-api-calls)
     - [China issues](#china-issues)
@@ -272,6 +279,126 @@ Coursera-dl can now be run from commandline or powershell.
 
 If you don't already have one, create a [Coursera][1] account and enroll in
 a class. See https://www.coursera.org/courses for the list of classes.
+
+# Gradio web UI
+
+A browser-based interface is included so you can download courses without
+touching the command line. It wraps the same core download logic as the CLI.
+
+## Launching the web UI
+
+Install the extra dependencies (only needed once):
+
+```
+uv pip install gradio pandas
+```
+
+Then start the app:
+
+```
+uv run python gradio_app.py
+```
+
+Open **http://127.0.0.1:7860** in your browser. Use `--port` to change the
+port or `--share` to get a temporary public Gradio link:
+
+```
+uv run python gradio_app.py --port 7861 --share
+```
+
+## Tab 1 — Setup
+
+Configure authentication and download options before resolving any courses:
+
+| Field | Description |
+|---|---|
+| **Cookies file** | Upload a Netscape `cookies.txt` exported from your browser (see [Authentication via cookies](#authentication-via-cookies-required)). Click **Validate cookies & connect** to verify. |
+| **Download path** | Folder where course sub-directories will be created (type the path directly). |
+| **Video resolution** | 360p / 540p (default) / 720p |
+| **Subtitle language(s)** | Language code(s) for subtitles, e.g. `en` or `en,zh-CN`. Use `all` to download every available language. |
+| **Parallel download jobs** | Number of simultaneous file downloads (1–8). |
+| **File formats** | Check the formats you want: `mp4` (video), `pdf` (slides/readings), `srt` (timed subtitles), `txt` (plain transcripts), `zip` (assignment assets). Leave all unchecked to download every available format. |
+| **Download quiz questions** | Include quiz HTML/JSON alongside lectures. |
+| **Download Jupyter notebooks** | Include `.ipynb` notebook files. |
+| **Overwrite existing files** | Re-download files that already exist on disk (off by default — existing files are skipped/resumed). |
+
+> **How to export cookies:** Log in to coursera.org, install the
+> [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)
+> extension, click its icon on any Coursera page, then click **Export**.
+> Upload the downloaded `cookies.txt` file in the Setup tab.
+
+## Tab 2 — Course Selection
+
+1. Paste one or more Coursera URLs (one per line) into the text box —
+   individual course URLs (`/learn/…`), specialization URLs
+   (`/specializations/…`), or professional certificate URLs
+   (`/professional-certificates/…`) are all accepted.
+2. Click **Resolve courses**. Specializations are auto-expanded into their
+   component courses (requires cookies to be validated first).
+3. A **Course preview** card shows each course's title and "What you'll
+   learn" bullet points fetched from the Coursera API.
+4. Review the editable table:
+   - **Display Name** — rename the on-disk folder (auto-filled from the slug;
+     edit freely). The final folder is `display-name_api-slug/`.
+   - **Include?** — uncheck to skip a course in this run.
+   - **API Slug** and **Folder Name** are managed automatically.
+5. The **Equivalent CLI command** panel below the table shows the exact
+   `uv run python .\coursera-dl …` command that would reproduce the same
+   download — useful for scripting or debugging.
+6. Click **Start Download** to proceed (or switch to the Progress & Logs tab
+   and click the button there).
+
+## Tab 3 — Progress & Logs
+
+- **Current course** indicator updates as each course starts and finishes.
+- **Download log** streams live output from coursera-dl's logging system.
+- **Summary card** appears when the run ends, listing completed courses,
+  any courses that had errors, and (if cancelled) how many were skipped.
+
+## Cancel, Resume, and Reset
+
+| Button | Behaviour |
+|---|---|
+| **Cancel** | Signals the download loop to stop after the current file finishes. The in-flight file is completed cleanly (not truncated). |
+| **Start Download** (again) | Resumes from where you left off. `resume=True` is always enabled — already-downloaded files are skipped; partially-downloaded files are continued via HTTP range requests. You can change which courses are included or adjust file formats (e.g. add `srt`) between runs and only the new/missing files will be fetched. |
+| **↩ Reset** | Clears the log and summary and navigates back to the Course Selection tab so you can start a fresh download. |
+
+> **Note:** The UI prevents a second download from starting while one is
+> already in progress. If a download thread takes unusually long to finish
+> after Cancel, the guard is cleared automatically so you can start again.
+
+---
+
+# Running tests
+
+The adapter and Gradio helper functions have a dedicated pytest suite. No
+network access or running Gradio server is required.
+
+Install pytest (only needed once):
+
+```
+uv pip install pytest
+```
+
+Run the new tests:
+
+```
+uv run python -m pytest coursera/test/test_adapter.py coursera/test/test_gradio_helpers.py -v
+```
+
+Or run the full existing suite alongside them:
+
+```
+uv run python -m pytest coursera/test -v
+```
+
+To also measure coverage on the adapter module:
+
+```
+uv run python -m pytest --cov=coursera.adapter coursera/test/test_adapter.py -v
+```
+
+---
 
 # Running the script
 
