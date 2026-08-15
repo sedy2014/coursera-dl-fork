@@ -255,7 +255,7 @@ CSS = """
 HEADER_HTML = """
 <div class="cdl-header">
   <div class="cdl-header-body">
-    <div class="cdl-header-wordmark">&#128218;&nbsp; coursera-dl</div>
+    <div class="cdl-header-wordmark">&#128218;&nbsp; Coursera-Omni-Scribe</div>
     <h1>Download any Coursera course.</h1>
     <p>Paste a URL, confirm the courses, and go &mdash; no CLI required.</p>
   </div>
@@ -535,7 +535,7 @@ def _run_download(
 def create_app() -> gr.Blocks:
     _attach_log_handler()
 
-    with gr.Blocks(title="coursera-dl") as app:
+    with gr.Blocks(title="Coursera-Omni-Scribe") as app:
 
         gr.HTML(HEADER_HTML)
 
