@@ -33,3 +33,7 @@ cookies.txt
 # syllabus data
 *-syllabus-parsed.json
 .vincent/mcp.json
+/debugging_pytest_local.md
+/outline_pipeline_tutorial.md
+/plan_transcript_to_tutor.md
+

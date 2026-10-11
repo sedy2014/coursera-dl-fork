@@ -9,3 +9,8 @@ attrs>=18.1.0
 # Gradio web UI
 gradio>=4.0
 pandas>=1.3
+# Slide Generator (Tab 4) — LLM providers; install the one(s) you use
+anthropic>=0.40
+openai>=1.50
+# Slide generation output
+python-pptx>=0.6.21

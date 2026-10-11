@@ -24,6 +24,7 @@ from .adapter import (
     compute_folder, slug_to_display, build_command, extract_slug,
     fetch_all_metadata, load_conf_file,
 )
+from slide_gen.slide_tab import build_slide_tab
 
 # ---------------------------------------------------------------------------
 # Global log queue — all coursera-dl logging flows here for the UI to drain
@@ -848,6 +849,9 @@ def create_app() -> gr.Blocks:
                     inputs=[],
                     outputs=[current_course_md, log_panel, summary_md, reset_btn, tabs],
                 )
+
+            with gr.Tab("Slide Generator"):
+                build_slide_tab()
 
         # ====================================================================
         # Cross-tab wiring (registered after all components exist)

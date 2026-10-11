@@ -105,7 +105,7 @@ setup(
               'download', 'education', 'MOOCs', 'video'],
     classifiers=trove_classifiers,
 
-    packages=["coursera"],
+    packages=["coursera", "slide_gen"],
     entry_points=dict(
         console_scripts=[
             'coursera-dl=coursera.coursera_dl:main'
