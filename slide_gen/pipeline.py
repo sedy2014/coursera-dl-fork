@@ -140,10 +140,11 @@ def _checked_notes(text, required):
     return text.strip()
 
 
-def synthesise(folder, provider, model, api_key):
+def synthesise(folder, provider, model, api_key, outline="", snapshot=None):
     """Yield editable outline, stage status, and a completed source snapshot."""
-    preview = ""
-    yield "", "Reading transcripts...", {}
+    preview = outline
+    current_snapshot = snapshot if snapshot is not None else {}
+    yield preview, "Reading transcripts...", current_snapshot
     try:
         entries = load_texts(scan_transcripts(folder))
         if not entries:
@@ -152,11 +153,11 @@ def synthesise(folder, provider, model, api_key):
         client = _client(provider, model, api_key)
         notes = []
         for index, txt_seg in enumerate(txt_segs, 1):
-            preview = ""
+            streaming_note = ""
             for token in _stream(client, OUTLINE_SYSTEM, "Source excerpts:\n" + txt_seg):
-                preview += token
-                yield preview, f"Extracting source notes {index}/{len(txt_segs)}...", {}
-            notes.append(_checked_notes(preview, source_ids(txt_seg)))
+                streaming_note += token
+                yield preview, f"Extracting source notes {index}/{len(txt_segs)}...", current_snapshot
+            notes.append(_checked_notes(streaming_note, source_ids(txt_seg)))
         merge_round = 0
         while len(notes) > 1:
             merge_round += 1
@@ -168,18 +169,18 @@ def synthesise(folder, provider, model, api_key):
                 pair = notes[index:index + 2]
                 required = source_ids("\n".join(pair))
                 prompt = "First outline:\n" + pair[0] + "\nSecond outline:\n" + pair[1]
-                preview = ""
+                streaming_merge = ""
                 for token in _stream(client, MERGE_SYSTEM, prompt):
-                    preview += token
-                    yield preview, f"Consolidating outline (round {merge_round})...", {}
-                merged.append(_checked_notes(preview, required))
+                    streaming_merge += token
+                    yield preview, f"Consolidating outline (round {merge_round})...", current_snapshot
+                merged.append(_checked_notes(streaming_merge, required))
             notes = merged
         preview = _checked_notes(notes[0], {entry["source_id"] for entry in entries})
-        snapshot = {"folder": str(Path(folder).expanduser().resolve()),
-                    "entries": entries, "complete": True}
-        yield preview, "Outline complete. Review the topics and source references.", snapshot
+        completed_snapshot = {"folder": str(Path(folder).expanduser().resolve()),
+                              "entries": entries, "complete": True}
+        yield preview, "Outline complete. Review the topics and source references.", completed_snapshot
     except Exception as error:
-        yield preview, f"Incomplete outline: {error}", {}
+        yield preview, f"Incomplete outline: {error}", current_snapshot
 
 
 def tutorial(outline, depth, provider, model, api_key, output_folder,

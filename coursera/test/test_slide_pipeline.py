@@ -25,7 +25,7 @@ def snapshot(tmp_path):
     source.mkdir()
     return {"folder": str(source.resolve()), "complete": True, "entries": [
         {"source_id": "S0001", "path": str(source / "lecture.en.txt"),
-         "rel": "lecture.en.txt", "module": "", "section": "", "lecture": "lecture",
+         "rel": "lecture.en.txt", "folder_parts": [], "folder": "", "lecture": "lecture",
          "text": "A distinctive source fact about supervised learning."},
     ]}
 
@@ -179,3 +179,17 @@ def test_invalid_slide_data_retries_once_without_touching_old_deck(monkeypatch, 
     assert target.read_bytes() == b"previous artifact"
     assert (output / "lesson_slides_error.txt").exists()
     assert not list(output.glob("*.py"))
+
+
+def test_synthesis_failure_preserves_working_outline_and_snapshot(monkeypatch, tmp_path):
+    existing_outline = "## Custom Outline\n- Keep my edits [S0001]"
+    existing_snapshot = {"folder": str(tmp_path), "complete": True}
+    # Fails because api_key is empty
+    updates = list(pipeline.synthesise(str(tmp_path), "OpenAI", "test", "",
+                                       outline=existing_outline, snapshot=existing_snapshot))
+    assert updates[0][0] == existing_outline
+    assert updates[0][2] == existing_snapshot
+    assert updates[-1][0] == existing_outline
+    assert updates[-1][2] == existing_snapshot
+    assert "Incomplete outline" in updates[-1][1]
+

@@ -1,0 +1,4 @@
+# Optional dependencies for Slide Generator (Tab 4) — LLM providers; install the one(s) you use
+anthropic>=0.40
+openai>=1.50
+python-pptx>=0.6.21
