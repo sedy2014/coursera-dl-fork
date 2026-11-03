@@ -75,7 +75,12 @@ def test_get_credentials_without_username_given_raises_exception():
 def test_get_credentials_with_keyring():
     if not credentials.keyring:
         return None
-    test_get_credentials_with_username_given(True)
+    try:
+        test_get_credentials_with_username_given(True)
+    except Exception as exc:
+        if "keychain" in str(exc).lower() or "keyring" in str(exc).lower():
+            pytest.skip(f"System keyring unavailable: {exc}")
+        raise
 
     # Test again, this time without getpass
     username, password = credentials.get_credentials(username='user',

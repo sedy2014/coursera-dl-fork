@@ -49,7 +49,14 @@ import re
 import time
 import shutil
 
-from distutils.version import LooseVersion as V
+try:
+    from packaging.version import Version as V
+except ImportError:
+    try:
+        from distutils.version import LooseVersion as V
+    except ImportError:
+        def V(version_str):
+            return tuple(int(x) if x.isdigit() else x for x in re.split(r'(\d+)', version_str))
 
 
 # Test versions of some critical modules.

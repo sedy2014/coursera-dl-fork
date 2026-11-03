@@ -42,19 +42,43 @@ def tutorial_args(snapshot, tmp_path):
 
 
 def test_synthesis_consolidates_previous_notes(monkeypatch, tmp_path):
-    (tmp_path / "first.en.txt").write_text("first source " * 300, encoding="utf-8")
-    (tmp_path / "second.en.txt").write_text("second source " * 300, encoding="utf-8")
+    m1 = tmp_path / "module_1"
+    m1.mkdir()
+    (m1 / "first.en.txt").write_text("first source " * 300, encoding="utf-8")
+    m2 = tmp_path / "module_2"
+    m2.mkdir()
+    (m2 / "second.en.txt").write_text("second source " * 300, encoding="utf-8")
+
+    entries = pipeline.scan_transcripts(str(tmp_path))
+    s1, s2 = entries[0]["source_id"], entries[1]["source_id"]
+
     client = install_client(monkeypatch, [
-        "## Topic A\nFirst fact [S0001]",
-        "## Topic B\nSecond fact [S0002]",
-        "## Combined\nFirst fact [S0001]\nSecond fact [S0002]",
+        f"## Topic A\nFirst fact [{s1}]",
+        f"## Topic B\nSecond fact [{s2}]",
+        f"## Combined\nFirst fact [{s1}]\nSecond fact [{s2}]",
     ])
     updates = list(pipeline.synthesise(str(tmp_path), "OpenAI", "test", "dummy"))
     assert len(client.calls) == 3
-    assert "First fact [S0001]" in client.calls[2][1]
-    assert "Second fact [S0002]" in client.calls[2][1]
+    assert f"First fact [{s1}]" in client.calls[2][1]
+    assert f"Second fact [{s2}]" in client.calls[2][1]
     assert updates[-1][2]["complete"]
     assert len(updates[-1][2]["entries"]) == 2
+
+
+def test_folder_fitting_budget_results_in_single_extraction_call(monkeypatch, tmp_path):
+    # A folder whose combined text fits extraction budget results in exactly one extraction call
+    (tmp_path / "first.en.txt").write_text("first lecture text", encoding="utf-8")
+    (tmp_path / "second.en.txt").write_text("second lecture text", encoding="utf-8")
+
+    entries = pipeline.scan_transcripts(str(tmp_path))
+    s1, s2 = entries[0]["source_id"], entries[1]["source_id"]
+
+    client = install_client(monkeypatch, [
+        f"## Topic\nFirst [{s1}]\nSecond [{s2}]",
+    ])
+    updates = list(pipeline.synthesise(str(tmp_path), "OpenAI", "test", "dummy"))
+    assert len(client.calls) == 1
+    assert updates[-1][2]["complete"]
 
 
 def test_synthesis_rejects_lost_source_references(monkeypatch, tmp_path):

@@ -5,7 +5,11 @@ from os.path import expanduser
 import json
 
 import pytest
-from mock import patch, Mock
+
+try:
+    from unittest.mock import patch, Mock
+except ImportError:
+    from mock import patch, Mock
 
 from coursera import api
 from coursera import define

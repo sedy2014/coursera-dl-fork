@@ -13,7 +13,10 @@ from time import time
 import requests
 import six
 
-from mock import Mock
+try:
+    from unittest.mock import Mock
+except ImportError:
+    from mock import Mock
 from coursera import utils
 from coursera import coursera_dl
 from coursera import api

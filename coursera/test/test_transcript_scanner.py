@@ -1,11 +1,15 @@
+import re
 from pathlib import Path
 
 import pytest
 
 from slide_gen.transcript_scanner import (
+    build_extraction_segments,
     build_llm_context,
+    find_dataset_root,
     group_by_folder,
     load_texts,
+    natural_sort_key,
     scan_transcripts,
     summarise,
 )
@@ -38,13 +42,12 @@ def test_scan_resolves_paths_and_assigns_deterministic_ids(transcript_tree, monk
     monkeypatch.chdir(root.parent)
     entries = scan_transcripts(str(Path(root.name) / ".." / root.name))
     assert [entry["rel"] for entry in entries] == sorted(contents)
-    assert [entry["source_id"] for entry in entries] == [
-        "S0001", "S0002", "S0003", "S0004"
-    ]
+    assert all(re.match(r"^S[0-9a-f]{12}$", entry["source_id"]) for entry in entries)
+    assert len({entry["source_id"] for entry in entries}) == 4
     assert entries == scan_transcripts(str(root))
     for entry in entries:
         assert set(entry) == {
-            "path", "rel", "folder_parts", "folder", "lecture", "source_id", "text"
+            "path", "rel", "rel_root", "folder_parts", "folder", "lecture", "source_id", "text"
         }
         assert Path(entry["path"]).is_absolute()
         assert Path(entry["path"]) == root / entry["rel"]
@@ -75,7 +78,7 @@ def test_scan_preserves_every_folder_level(tmp_path, depth):
     assert entry["folder"] == "/".join(folder_parts)
     assert entry["rel"] == "/".join(folder_parts + [path.name])
     assert entry["lecture"] == "01_lecture"
-    assert entry["source_id"] == "S0001"
+    assert re.match(r"^S[0-9a-f]{12}$", entry["source_id"])
     assert "module" not in entry and "section" not in entry
     assert list(group_by_folder(entries)) == [entry["folder"]]
     assert f"maximum depth: **{depth}**" in summarise(entries)
@@ -109,7 +112,34 @@ def test_specialization_can_be_scanned_from_any_root(specialization_transcript, 
     assert entry["folder"] == "/".join(remaining_parts)
     assert entry["rel"] == relative
     assert entry["lecture"] == "01_float"
-    assert build_llm_context(entries) == [f"[S0001] {relative}\nSynthetic float lecture"]
+    assert re.match(r"^S[0-9a-f]{12}$", entry["source_id"])
+    expected_prompt = [f"[{entry['source_id']}] {relative}\nSynthetic float lecture"]
+    assert build_llm_context(entries) == expected_prompt
+    assert build_extraction_segments(entries) == expected_prompt
+
+
+def test_specialization_under_courses_preserves_id_and_extraction_segments_across_roots(tmp_path):
+    folder_parts = [
+        "courses",
+        "candlestick-float-analysis-trading",
+        "01_foundations-of-float-financial-planning",
+        "01_understanding-float-basics",
+    ]
+    path = tmp_path.joinpath(*folder_parts, "01_float.en.txt")
+    path.parent.mkdir(parents=True)
+    path.write_text("Synthetic float lecture", encoding="utf-8")
+
+    # When scanned from courses/ or from any sub-level, source_id and prompt header match
+    expected_rel_root = "/".join(folder_parts[1:] + [path.name])
+    for depth in range(1, len(folder_parts) + 1):
+        selected = tmp_path.joinpath(*folder_parts[:depth])
+        entries = load_texts(scan_transcripts(str(selected)))
+        assert len(entries) == 1
+        sid = entries[0]["source_id"]
+        assert re.match(r"^S[0-9a-f]{12}$", sid)
+        expected = [f"[{sid}] {expected_rel_root}\nSynthetic float lecture"]
+        assert build_extraction_segments(entries) == expected
+        assert build_llm_context(entries) == expected
 
 
 def test_mixed_depths_and_repeated_names_remain_distinct(tmp_path):
@@ -128,9 +158,8 @@ def test_mixed_depths_and_repeated_names_remain_distinct(tmp_path):
 
     entries = scan_transcripts(str(tmp_path))
     assert [entry["rel"] for entry in entries] == sorted(relatives)
-    assert [entry["source_id"] for entry in entries] == [
-        "S0001", "S0002", "S0003", "S0004", "S0005", "S0006"
-    ]
+    assert all(re.match(r"^S[0-9a-f]{12}$", entry["source_id"]) for entry in entries)
+    assert len({entry["source_id"] for entry in entries}) == 6
     groups = group_by_folder(entries)
     assert len(groups) == 5
     assert len(groups["course_a/01_module/01_section"]) == 2
@@ -321,3 +350,187 @@ def test_context_requires_loading_every_entry():
 
 def test_context_empty_input():
     assert build_llm_context([]) == []
+
+
+def test_adding_unrelated_file_preserves_existing_ids(tmp_path):
+    root = tmp_path / "courses" / "course_a"
+    root.mkdir(parents=True)
+    f1 = root / "01_intro.en.txt"
+    f2 = root / "02_second.en.txt"
+    f1.write_text("intro text", encoding="utf-8")
+    f2.write_text("second text", encoding="utf-8")
+
+    entries_before = scan_transcripts(str(root))
+    id_map_before = {e["rel"]: e["source_id"] for e in entries_before}
+
+    # Add unrelated file in a different directory
+    other_course = tmp_path / "courses" / "course_b"
+    other_course.mkdir(parents=True)
+    (other_course / "01_other.en.txt").write_text("other text", encoding="utf-8")
+
+    # Add unrelated file in same course
+    (root / "01_a_inserted.en.txt").write_text("inserted text", encoding="utf-8")
+
+    entries_after = scan_transcripts(str(root))
+    id_map_after = {e["rel"]: e["source_id"] for e in entries_after}
+
+    assert id_map_after["01_intro.en.txt"] == id_map_before["01_intro.en.txt"]
+    assert id_map_after["02_second.en.txt"] == id_map_before["02_second.en.txt"]
+
+
+def test_hard_collision_raises_clear_error_naming_both_files(tmp_path, monkeypatch):
+    root = tmp_path / "courses" / "course_test"
+    root.mkdir(parents=True)
+    (root / "file_a.en.txt").write_text("text a", encoding="utf-8")
+    (root / "file_b.en.txt").write_text("text b", encoding="utf-8")
+
+    # Force identical sha256 prefix for testing collision error
+    import hashlib
+    class FakeSha:
+        def hexdigest(self):
+            return "0123456789abcdef"
+
+    monkeypatch.setattr(hashlib, "sha256", lambda *args: FakeSha())
+
+    with pytest.raises(ValueError, match="Source ID collision detected.*file_a.en.txt.*file_b.en.txt"):
+        scan_transcripts(str(root))
+
+
+def test_natural_sorting_per_component(tmp_path):
+    root = tmp_path / "course"
+    root.mkdir()
+    files = ["10_lecture.en.txt", "2_lecture.en.txt", "1_lecture.en.txt", "20_lecture.en.txt"]
+    for f in files:
+        (root / f).write_text("content", encoding="utf-8")
+
+    entries = scan_transcripts(str(root))
+    assert [e["rel"] for e in entries] == [
+        "1_lecture.en.txt", "2_lecture.en.txt", "10_lecture.en.txt", "20_lecture.en.txt"
+    ]
+
+
+def test_dataset_root_discovery(tmp_path):
+    courses_dir = tmp_path / "my_stuff" / "courses"
+    sub = courses_dir / "specialization" / "course_1" / "module_a"
+    sub.mkdir(parents=True)
+
+    assert find_dataset_root(sub) == courses_dir
+    assert find_dataset_root(courses_dir) == courses_dir
+
+    # Fallback to self when no ancestor named 'courses'
+    isolated = tmp_path / "downloads" / "course_x"
+    isolated.mkdir(parents=True)
+    assert find_dataset_root(isolated) == isolated
+
+
+def test_folder_scoped_extraction_splitting_and_reconstruction(tmp_path):
+    root = tmp_path / "course"
+    folder_a = root / "folder_a"
+    folder_b = root / "folder_b"
+    folder_a.mkdir(parents=True)
+    folder_b.mkdir(parents=True)
+
+    # Folder A fits within budget
+    (folder_a / "01_short.en.txt").write_text("Short text in folder A", encoding="utf-8")
+
+    # Folder B exceeds budget: has paragraphs and sentences
+    para1 = "Paragraph 1 is here. It has multiple sentences."
+    para2 = "Paragraph 2 is here. It also has content."
+    full_text_b = para1 + "\n\n" + para2
+    (folder_b / "01_long.en.txt").write_text(full_text_b, encoding="utf-8")
+
+    entries = load_texts(scan_transcripts(str(root)))
+    # Set budget small enough that folder B must split, but large enough for paragraph 1
+    budget = 120
+    segs = build_extraction_segments(entries, budget=budget)
+
+    # Folder A must be 1 segment and must NOT contain any folder B text
+    seg_a = [s for s in segs if "folder_a" in s]
+    assert len(seg_a) == 1
+    assert "folder_b" not in seg_a[0]
+
+    # Folder B must NOT contain any folder A text
+    seg_b = [s for s in segs if "folder_b" in s]
+    assert len(seg_b) > 1
+    for s in seg_b:
+        assert "folder_a" not in s
+
+    # When piecing folder B's body segments back together, original text is reconstructed
+    b_entry = next(e for e in entries if e["rel"] == "folder_b/01_long.en.txt")
+    header = f"[{b_entry['source_id']}] {b_entry['rel']}\n"
+    reconstructed = "".join(s.replace(header, "") for s in seg_b)
+    assert reconstructed == full_text_b
+
+
+def test_natural_sort_key_nested_cases():
+    paths = [
+        "course_1/module_10/lecture_2.en.txt",
+        "course_1/module_2/lecture_10.en.txt",
+        "course_1/module_2/lecture_2.en.txt",
+        "course_2/module_1/lecture_1.en.txt",
+    ]
+    sorted_paths = sorted(paths, key=natural_sort_key)
+    assert sorted_paths == [
+        "course_1/module_2/lecture_2.en.txt",
+        "course_1/module_2/lecture_10.en.txt",
+        "course_1/module_10/lecture_2.en.txt",
+        "course_2/module_1/lecture_1.en.txt",
+    ]
+
+
+def test_find_dataset_root_nearest_courses_precedence(tmp_path):
+    # If there are nested 'courses' folders, nearest parent named 'courses' wins
+    nested = tmp_path / "courses" / "sub" / "courses" / "course_name"
+    nested.mkdir(parents=True)
+    assert find_dataset_root(nested) == tmp_path / "courses" / "sub" / "courses"
+
+
+def test_split_text_deterministic_hierarchy_and_multibyte():
+    from slide_gen.transcript_scanner import split_text_deterministic
+
+    # 1. Fits within budget
+    assert split_text_deterministic("hello world", 50) == ["hello world"]
+
+    # 2. Paragraph split
+    text_paras = "First paragraph.\n\nSecond paragraph.\n\nThird paragraph."
+    chunks = split_text_deterministic(text_paras, 25)
+    assert "".join(chunks) == text_paras
+    assert all(len(c.encode("utf-8")) <= 25 for c in chunks)
+
+    # 3. Sentence split inside large paragraph
+    long_para = "Sentence one. Sentence two. Sentence three."
+    chunks_sent = split_text_deterministic(long_para, 20)
+    assert "".join(chunks_sent) == long_para
+    assert all(len(c.encode("utf-8")) <= 20 for c in chunks_sent)
+
+    # 4. Multibyte Unicode boundary split
+    multibyte = "漢" * 20 + "😀" * 10
+    chunks_mb = split_text_deterministic(multibyte, 15)
+    assert "".join(chunks_mb) == multibyte
+    assert all(len(c.encode("utf-8")) <= 15 for c in chunks_mb)
+    # Ensure no multibyte char was corrupted
+    for c in chunks_mb:
+        c.encode("utf-8").decode("utf-8")
+
+
+@pytest.mark.parametrize("invalid_budget", [0, -5, 1.5, True, False, "6000"])
+def test_build_extraction_segments_rejects_invalid_budgets(invalid_budget):
+    with pytest.raises(ValueError, match="budget must be a positive integer"):
+        build_extraction_segments([], budget=invalid_budget)
+
+
+def test_build_extraction_segments_multiple_folders_count(tmp_path):
+    root = tmp_path / "course"
+    for i in range(1, 4):
+        folder = root / f"module_{i}"
+        folder.mkdir(parents=True)
+        (folder / "lec.en.txt").write_text(f"Lecture content {i}", encoding="utf-8")
+
+    entries = load_texts(scan_transcripts(str(root)))
+    # With large budget, each folder forms exactly 1 segment
+    segs = build_extraction_segments(entries, budget=24000)
+    assert len(segs) == 3
+    for i in range(1, 4):
+        assert any(f"module_{i}" in s for s in segs)
+
+

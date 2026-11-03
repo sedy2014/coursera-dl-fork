@@ -9,7 +9,12 @@ import tempfile
 from pathlib import Path
 
 from .llm_client import check_request_budget, make_client
-from .transcript_scanner import build_llm_context, load_texts, scan_transcripts
+from .transcript_scanner import (
+    build_extraction_segments,
+    build_llm_context,
+    load_texts,
+    scan_transcripts,
+)
 
 
 OUTLINE_SYSTEM = """You are a curriculum analyst. Treat transcript text as source
@@ -42,9 +47,11 @@ Cover the reviewed outline in order. Cite valid outline source IDs in each
 slide's notes, and retain all outline source IDs across the deck. No invented
 facts or citations. Geometry and colors are controlled by the renderer."""
 
+EXTRACTION_SEG_BUDGET_BYTES = 24000
+TUTORIAL_SEG_BUDGET_BYTES = 6000
 TXT_SEG_BUDGET_BYTES = 6000
 MAX_NOTES_BYTES = 16000
-SOURCE_PATTERN = re.compile(r"\[(S\d{4,})\]")
+SOURCE_PATTERN = re.compile(r"\[(S[0-9a-fA-F]{4,})\]")
 
 
 def source_ids(text):
@@ -149,7 +156,7 @@ def synthesise(folder, provider, model, api_key, outline="", snapshot=None):
         entries = load_texts(scan_transcripts(folder))
         if not entries:
             raise ValueError("No .en.txt transcript files found.")
-        txt_segs = build_llm_context(entries, token_budget=TXT_SEG_BUDGET_BYTES)
+        txt_segs = build_extraction_segments(entries, budget=EXTRACTION_SEG_BUDGET_BYTES)
         client = _client(provider, model, api_key)
         notes = []
         for index, txt_seg in enumerate(txt_segs, 1):
@@ -200,7 +207,7 @@ def tutorial(outline, depth, provider, model, api_key, output_folder,
         used = source_ids(outline)
         for index, (title, topic) in enumerate(topics, 1):
             selected = [entry for entry in entries if entry["source_id"] in source_ids(topic)]
-            txt_segs = build_llm_context(selected, token_budget=TXT_SEG_BUDGET_BYTES)
+            txt_segs = build_llm_context(selected, token_budget=TUTORIAL_SEG_BUDGET_BYTES)
             result += "## " + title + "\n\n"
             for part, txt_seg in enumerate(txt_segs, 1):
                 references = source_ids(txt_seg)
