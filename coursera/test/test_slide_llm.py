@@ -220,6 +220,7 @@ def test_openai_stream_request_and_empty_choices(model, mock_sdks):
             {"role": "user", "content": "user"},
         ],
         max_completion_tokens=16000, stream=True,
+        stream_options={"include_usage": True},
     )
     sdk.context.__exit__.assert_called_once()
 
@@ -324,3 +325,104 @@ def test_stream_failure_propagates_and_closes_context(provider, mock_sdks):
     assert caught.value is error
     sdk.context.__exit__.assert_called_once()
     sdk.request.assert_called_once()
+
+
+def test_openai_captures_usage_from_empty_choices_chunk(mock_sdks):
+    sdk = mock_sdks["OpenAI"]
+    usage_chunk = SimpleNamespace(
+        choices=[],
+        usage=SimpleNamespace(prompt_tokens=42, completion_tokens=15),
+    )
+    sdk.stream.__iter__.return_value = iter([
+        completion_chunk("text", finish_reason="stop"),
+        usage_chunk,
+    ])
+    client = OpenAIClient("test-key", "gpt-4o")
+    result = list(client.stream("system", "user"))
+    assert result == ["text"]
+    assert client.last_usage is not None
+    assert client.last_usage.input_tokens == 42
+    assert client.last_usage.output_tokens == 15
+    assert client.last_usage.status == "success"
+
+
+def test_anthropic_captures_usage_from_final_message(mock_sdks):
+    sdk = mock_sdks["Anthropic"]
+    sdk.stream.text_stream = iter(["content"])
+    sdk.stream.get_final_message.return_value = SimpleNamespace(
+        stop_reason="end_turn",
+        usage=SimpleNamespace(input_tokens=55, output_tokens=22),
+    )
+    client = AnthropicClient("test-key", "claude-sonnet-4-6")
+    result = list(client.stream("system", "user"))
+    assert result == ["content"]
+    assert client.last_usage is not None
+    assert client.last_usage.input_tokens == 55
+    assert client.last_usage.output_tokens == 22
+    assert client.last_usage.status == "success"
+
+
+@pytest.mark.parametrize("provider,error_cls_name", [
+    ("OpenAI", "AuthenticationError"),
+    ("Anthropic", "AuthenticationError"),
+    ("OpenAI", "PermissionDeniedError"),
+    ("Anthropic", "PermissionDeniedError"),
+])
+def test_fatal_error_classification(provider, error_cls_name, mock_sdks):
+    from slide_gen.llm_client import FatalAPIError
+
+    class ProviderFatalError(Exception):
+        pass
+    ProviderFatalError.__name__ = error_cls_name
+
+    sdk = mock_sdks[provider]
+    sdk.request.side_effect = ProviderFatalError("Invalid API key")
+    client = make_client(provider, "bad-key", "test-model")
+    with pytest.raises(FatalAPIError, match="fatal error"):
+        list(client.stream("system", "user"))
+
+
+def test_usage_logging_unknown_tokens_not_zero(tmp_path):
+    from slide_gen.llm_client import UsageReport, log_request_usage
+    import json
+
+    usage = UsageReport(input_tokens=None, output_tokens=None, status="error")
+    log_request_usage("gpt-4o", usage, log_dir=tmp_path)
+
+    log_file = tmp_path / "usage_log.jsonl"
+    assert log_file.exists()
+    data = json.loads(log_file.read_text(encoding="utf-8").strip())
+    assert data["input_tokens"] == "unknown"
+    assert data["output_tokens"] == "unknown"
+    assert data["input_tokens"] != 0
+    assert data["output_tokens"] != 0
+    assert data["status"] == "error"
+
+
+def test_model_prices_cost_calculation(tmp_path):
+    from slide_gen.llm_client import UsageReport, log_request_usage, MODEL_PRICES
+    import json
+
+    # 100,000 input tokens and 50,000 output tokens for gpt-4o:
+    # (100,000 * 2.50 + 50,000 * 10.00) / 1,000,000 = (0.25 + 0.50) = 0.75 USD
+    usage = UsageReport(input_tokens=100000, output_tokens=50000, status="success")
+    log_request_usage("gpt-4o", usage, log_dir=tmp_path)
+
+    log_file = tmp_path / "usage_log.jsonl"
+    data = json.loads(log_file.read_text(encoding="utf-8").strip())
+    assert data["estimated_cost_usd"] == 0.75
+    assert data["input_tokens"] == 100000
+    assert data["output_tokens"] == 50000
+
+
+@pytest.mark.parametrize("msg", ["invalid_api_key", "insufficient_quota", "account billing problem"])
+def test_fatal_error_detection_patterns(msg):
+    from slide_gen.llm_client import _is_fatal_error
+
+    err = RuntimeError(f"API failed due to {msg}")
+    assert _is_fatal_error(err) is True
+
+    normal_err = RuntimeError("Connection timed out")
+    assert _is_fatal_error(normal_err) is False
+
+

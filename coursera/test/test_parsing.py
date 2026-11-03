@@ -10,7 +10,10 @@ import os.path
 import pytest
 
 from six import iteritems
-from mock import patch, Mock, mock_open
+try:
+    from unittest.mock import patch, Mock, mock_open
+except ImportError:
+    from mock import patch, Mock, mock_open
 
 from coursera import coursera_dl
 from coursera import api

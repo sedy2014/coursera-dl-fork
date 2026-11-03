@@ -150,7 +150,7 @@ class QuizExamToMarkupConverter(object):
         soup = BeautifulSoup(text)
         while soup.find(initial_tag):
             soup.find(initial_tag).name = target_tag
-        return soup.prettify()
+        return soup.prettify().strip()
 
     def _generate_input_field(self):
         return ['<form><label>Enter answer here:<input type="text" '
@@ -694,7 +694,7 @@ class CourseraOnDemand(object):
                 head, tail = os.path.split(content['path'])
                 # '/' in the following line is for a reason:
                 # @noureddin says: "I split head using split('/') not
-                # os.path.split() because it's seems to me that it comes from a
+                # os.path.split() because it seems to me that it comes from a
                 # web page, so the separator will always be /, so using the
                 # native path splitting function is not the most portable
                 # way to do it."
