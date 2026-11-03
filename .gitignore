@@ -37,3 +37,6 @@ cookies.txt
 /outline_pipeline_tutorial.md
 /plan_transcript_to_tutor.md
 
+# slide generator cache
+.slide_cache/
+.slide_gen_cache/

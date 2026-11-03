@@ -82,7 +82,7 @@ def build_slide_tab():
 
     def change_folder(value):
         message, destination = _scan_folder(value)
-        return message, destination, "", {}, _file_update(None), _file_update(None)
+        return message, destination, _file_update(None), _file_update(None)
 
     def generate_tutorial(*args):
         for text, status, path in tutorial(*args):
@@ -94,9 +94,9 @@ def build_slide_tab():
 
     provider.change(fn=change_provider, inputs=[provider], outputs=[model])
     folder.change(fn=change_folder, inputs=[folder],
-                  outputs=[summary, output_folder, outline, snapshot, tutorial_file, slides_file],
+                  outputs=[summary, output_folder, tutorial_file, slides_file],
                   concurrency_id="slide_generation", concurrency_limit=1)
-    outline_button.click(fn=synthesise, inputs=[folder, provider, model, api_key],
+    outline_button.click(fn=synthesise, inputs=[folder, provider, model, api_key, outline, snapshot],
                          outputs=[outline, outline_status, snapshot],
                          concurrency_id="slide_generation", concurrency_limit=1)
     tutorial_button.click(

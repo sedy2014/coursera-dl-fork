@@ -65,6 +65,7 @@ long_description = read_file(
 )
 requirements = read_file('requirements.txt')
 dev_requirements = read_file('requirements-dev.txt')
+slides_requirements = read_file('requirements-slides.txt')
 
 trove_classifiers = [
     'Development Status :: 4 - Beta',
@@ -95,7 +96,8 @@ setup(
 
     install_requires=requirements,
     extras_require=dict(
-        dev=dev_requirements
+        dev=dev_requirements,
+        slides=slides_requirements,
     ),
 
     description='Script for downloading Coursera.org videos and naming them.',
